@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claudebet"
+version = "0.1.0"
+description = "Market-aware probability and staking engine for sports betting"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+http = ["requests>=2.31"]
+
+[project.scripts]
+claudebet = "claudebet.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["claudebet*"]
