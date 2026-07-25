@@ -13,6 +13,10 @@ It answers three questions, in this order:
 3. **How much should I bet?** Fractional Kelly, sized across the whole slate at
    once, under per-bet and total-exposure caps.
 
+**New to this / not a programmer?** Read [QUICKSTART.md](QUICKSTART.md) — it
+walks through installing Python, downloading the code and running the first
+command, assuming nothing.
+
 ## Quick start: scanning a day at one bookmaker
 
 If you bet at a single book — which is most people — this is the workflow.
@@ -336,5 +340,5 @@ money. Bet only what you can afford to lose.
 ## Tests
 
 ```bash
-python -m pytest tests -q     # 353 tests
+python -m pytest tests -q     # 357 tests
 ```

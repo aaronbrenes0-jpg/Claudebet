@@ -139,6 +139,16 @@ class MatchLog:
         self.records.append(record)
         self.records.sort(key=lambda r: _as_datetime(r.when))
 
+    @property
+    def is_example_data(self) -> bool:
+        """True when this log is the shipped sample rather than real results.
+
+        The template exists so the commands run out of the box, but its matches
+        are invented. Every consumer of a match log should say so loudly rather
+        than quietly producing prices from fiction.
+        """
+        return any("EXAMPLE-DATA-DO-NOT-BET" in r.competition for r in self.records)
+
     def teams(self) -> list[str]:
         found: set[str] = set()
         for r in self.records:

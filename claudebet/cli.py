@@ -284,6 +284,7 @@ def cmd_form(args: argparse.Namespace) -> int:
     from .form import FormModel
 
     log = load_match_log(args.file)
+    _warn_if_example(log)
     if args.home not in log.teams() or args.away not in log.teams():
         raise SystemExit(
             f"unknown team; the log contains: {', '.join(log.teams())}"
@@ -338,6 +339,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
     from .scan import ScanConfig, load_fixtures, scan
 
     log = load_match_log(args.log)
+    _warn_if_example(log)
     fixtures, date, book = load_fixtures(args.fixtures)
     if not fixtures:
         raise SystemExit(f"{args.fixtures} contains no matches")
@@ -361,6 +363,21 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _warn_if_example(log) -> None:
+    """Shout when the loaded results are the shipped sample.
+
+    The template is invented data. It exists so the commands run before you
+    have typed anything in, and prices derived from it are meaningless.
+    """
+    if getattr(log, "is_example_data", False):
+        print("=" * 68)
+        print("  THIS IS THE EXAMPLE FILE. The matches in it are made up.")
+        print("  Every number below is fiction. Replace matches.csv with real")
+        print("  results before betting anything on it.")
+        print("=" * 68)
+        print()
+
+
 def cmd_ask(args: argparse.Namespace) -> int:
     from .ask import (
         check_price,
@@ -374,6 +391,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
     from .scan import ScanConfig
 
     log = load_match_log(args.log)
+    _warn_if_example(log)
     model = FormModel(window=args.last).fit(log)
     cfg = ScanConfig(window=args.last, min_edge=args.min_edge,
                      max_stake_fraction=args.max_stake, trust_scale=args.trust)
@@ -458,6 +476,7 @@ def cmd_trends(args: argparse.Namespace) -> int:
     from .trends import scan_trends, team_trends
 
     log = load_match_log(args.log)
+    _warn_if_example(log)
     if args.team:
         if args.team not in log.teams():
             raise SystemExit(f"unknown team; log has: {', '.join(log.teams())}")

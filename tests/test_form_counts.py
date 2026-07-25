@@ -601,3 +601,37 @@ class TestFormCli:
 
         assert main(["template", str(tmp_path / "m.csv"), "--log"]) == 0
         assert "claudebet form" in capsys.readouterr().out
+
+
+class TestExampleDataGuard:
+    def test_shipped_template_is_marked_as_example(self, tmp_path):
+        path = write_match_log_template(tmp_path / "m.csv")
+        log = load_match_log(path)
+        assert log.is_example_data, (
+            "the shipped sample must be detectable, or someone will bet on "
+            "invented matches"
+        )
+
+    def test_real_looking_data_is_not_flagged(self, tmp_path):
+        path = tmp_path / "m.csv"
+        path.write_text(
+            "date,home,away,home_goals,away_goals\n"
+            "2026-01-01,A,B,2,1\n2026-01-08,B,A,0,0\n"
+        )
+        assert not load_match_log(path).is_example_data
+
+    def test_clearing_the_marker_clears_the_flag(self, tmp_path):
+        path = write_match_log_template(tmp_path / "m.csv")
+        cleaned = path.read_text().replace("EXAMPLE-DATA-DO-NOT-BET", "")
+        path.write_text(cleaned)
+        assert not load_match_log(path).is_example_data
+
+    def test_commands_shout_about_example_data(self, tmp_path, capsys):
+        from claudebet.cli import main
+
+        path = write_match_log_template(tmp_path / "m.csv")
+        assert main(["ask", str(path), "--home", "Alianza Lima",
+                     "--away", "Boys"]) == 0
+        out = capsys.readouterr().out
+        assert "EXAMPLE FILE" in out
+        assert "made up" in out
