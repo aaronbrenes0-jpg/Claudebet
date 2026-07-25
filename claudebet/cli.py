@@ -279,10 +279,71 @@ def cmd_log(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_template(args: argparse.Namespace) -> int:
-    from .data.sources import write_template
+def cmd_form(args: argparse.Namespace) -> int:
+    from .data.sources import load_match_log
+    from .form import FormModel
 
-    path = write_template(args.path)
+    log = load_match_log(args.file)
+    if args.home not in log.teams() or args.away not in log.teams():
+        raise SystemExit(
+            f"unknown team; the log contains: {', '.join(log.teams())}"
+        )
+
+    model = FormModel(window=args.last).fit(log)
+    print(f"{len(log)} matches, {len(log.teams())} teams, "
+          f"tracking: {', '.join(model.stat_models)}")
+    print()
+
+    print(f"-- recent form (last {args.last}) --")
+    for team in (args.home, args.away):
+        print("  " + model.team_form(team).line())
+    if args.last != 10:
+        print("\n-- recent form (last 10) --")
+        for team in (args.home, args.away):
+            print("  " + model.team_form(team, window=10).line())
+
+    print("\n-- how much of that form is signal --")
+    for stat, sm in sorted(model.stat_models.items()):
+        fh = sm.form_attack.get(args.home, 1.0)
+        fa = sm.form_attack.get(args.away, 1.0)
+        print(
+            f"  {stat:<10} form multiplier after shrinkage: "
+            f"{args.home} x{fh:.3f}, {args.away} x{fa:.3f}"
+        )
+    print("  (values near 1.000 mean the recent run was inside normal noise "
+          "and has been discounted accordingly)")
+
+    projection = model.project(args.home, args.away, neutral=args.neutral,
+                               use_form=not args.no_form)
+    print()
+    print(projection.report())
+
+    if args.json:
+        print()
+        print(json.dumps(_jsonable(projection.markets()), indent=2))
+    return 0
+
+
+def _jsonable(value):
+    """JSON keys must be strings; betting lines are naturally floats."""
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    return value
+
+
+def cmd_template(args: argparse.Namespace) -> int:
+    from .data.sources import write_match_log_template, write_template
+
+    if args.log:
+        path = write_match_log_template(args.path or "matches.csv")
+        print(
+            f"wrote {path}\nadd your results, then: "
+            f'claudebet form {path} --home "Alianza Lima" --away "Sporting Cristal"'
+        )
+        return 0
+    path = write_template(args.path or "market.json")
     print(f"wrote {path}\nedit it, then: claudebet analyze {path} --bankroll 1000")
     return 0
 
@@ -364,8 +425,21 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--closing", required=True)
     c.set_defaults(func=cmd_clv)
 
-    t = sub.add_parser("template", help="write an example market file")
-    t.add_argument("path", nargs="?", default="market.json")
+    fm = sub.add_parser("form", help="analyse recent form and price every market")
+    fm.add_argument("file", help="CSV match log (see: claudebet template --log)")
+    fm.add_argument("--home", required=True)
+    fm.add_argument("--away", required=True)
+    fm.add_argument("--last", type=int, default=5, help="form window (default 5)")
+    fm.add_argument("--neutral", action="store_true")
+    fm.add_argument("--no-form", action="store_true",
+                    help="season strength only, ignoring the recent window")
+    fm.add_argument("--json", action="store_true", help="dump every market")
+    fm.set_defaults(func=cmd_form)
+
+    t = sub.add_parser("template", help="write an example input file")
+    t.add_argument("path", nargs="?")
+    t.add_argument("--log", action="store_true",
+                   help="write a match-log CSV instead of a market file")
     t.set_defaults(func=cmd_template)
 
     f = sub.add_parser("fetch", help="pull live odds from the-odds-api.com")

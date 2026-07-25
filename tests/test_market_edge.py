@@ -2,7 +2,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from claudebet.edge import evaluate, expected_roi, kelly_fraction, risk_of_drawdown
+from claudebet.edge import (
+    cents_of_edge,
+    evaluate,
+    expected_roi,
+    kelly_fraction,
+    risk_of_drawdown,
+)
 from claudebet.market import Market, Quote, arbitrage, best_prices, consensus, movement
 from claudebet.blend import blend, log_linear_pool, weight_from_evidence, shrink_toward
 
@@ -190,6 +196,25 @@ class TestEdge:
 
     def test_edge_in_cents_is_zero_at_a_fair_price(self):
         assert evaluate(0.5, 2.0).edge_cents == pytest.approx(0.0, abs=1e-6)
+
+    def test_cents_of_edge_is_sane_either_side_of_even_money(self):
+        # American odds jump from -100 to +100 with nothing in between, so a
+        # naive subtraction across evens overstates the gap by exactly 200.
+        # 2.05 against a fair 1.9865 is about six cents, not 206.
+        assert cents_of_edge(0.5034, 2.05) == pytest.approx(6.4, abs=0.3)
+        # Both sides negative: plain American difference, no crossing.
+        assert cents_of_edge(1 / 1.5701, 1.62) == pytest.approx(14.1, abs=0.3)
+        # Both sides positive.
+        assert cents_of_edge(1 / 2.60, 2.70) == pytest.approx(10.0, abs=0.3)
+
+    def test_cents_of_edge_grows_smoothly_across_even_money(self):
+        # Sweep a price across the boundary; the measure must not jump.
+        previous = None
+        for price in [1.94 + 0.01 * i for i in range(13)]:
+            value = cents_of_edge(0.5, price)
+            if previous is not None:
+                assert abs(value - previous) < 3.0
+            previous = value
 
     def test_drawdown_risk_falls_with_smaller_kelly(self):
         full = risk_of_drawdown(0.02, 1.0, 1.0, 0.5)

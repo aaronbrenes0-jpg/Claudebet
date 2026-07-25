@@ -36,7 +36,51 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Sequence
 
-__all__ = ["Match", "Scoreline", "DixonColes"]
+__all__ = ["Match", "Scoreline", "DixonColes", "tau_correction", "scoreline_from_rates"]
+
+
+def tau_correction(h: int, a: int, lam: float, mu: float, rho: float) -> float:
+    """Dixon-Coles adjustment to the four low-scoring cells.
+
+    Independent Poisson understates 0-0 and 1-1 and overstates 1-0 and 0-1.
+    ``rho`` is the single parameter that repairs it; everything else is
+    untouched.
+    """
+    if h == 0 and a == 0:
+        return max(1e-9, 1.0 - lam * mu * rho)
+    if h == 0 and a == 1:
+        return max(1e-9, 1.0 + lam * rho)
+    if h == 1 and a == 0:
+        return max(1e-9, 1.0 + mu * rho)
+    if h == 1 and a == 1:
+        return max(1e-9, 1.0 - rho)
+    return 1.0
+
+
+def scoreline_from_rates(
+    home: str,
+    away: str,
+    lam: float,
+    mu: float,
+    rho: float = 0.0,
+    max_goals: int = 12,
+) -> "Scoreline":
+    """Build a joint scoreline distribution straight from two scoring rates.
+
+    Useful when the rates come from somewhere other than a fitted Dixon-Coles
+    -- recent form, expected goals, or a hand-entered view.
+    """
+    n = max_goals + 1
+    matrix = [[0.0] * n for _ in range(n)]
+    for h in range(n):
+        ph = _poisson(h, lam)
+        for a in range(n):
+            matrix[h][a] = ph * _poisson(a, mu) * tau_correction(h, a, lam, mu, rho)
+    total = sum(sum(row) for row in matrix)
+    if total <= 0:
+        raise ValueError("degenerate scoreline distribution")
+    matrix = [[v / total for v in row] for row in matrix]
+    return Scoreline(home=home, away=away, matrix=matrix, home_xg=lam, away_xg=mu)
 
 _LOG_FACT = [0.0]
 for _i in range(1, 60):
@@ -294,17 +338,7 @@ class DixonColes:
         )
         return lam, mu
 
-    @staticmethod
-    def _tau(h: int, a: int, lam: float, mu: float, rho: float) -> float:
-        if h == 0 and a == 0:
-            return max(1e-9, 1.0 - lam * mu * rho)
-        if h == 0 and a == 1:
-            return max(1e-9, 1.0 + lam * rho)
-        if h == 1 and a == 0:
-            return max(1e-9, 1.0 + mu * rho)
-        if h == 1 and a == 1:
-            return max(1e-9, 1.0 - rho)
-        return 1.0
+    _tau = staticmethod(tau_correction)
 
     def _loglik(
         self, matches: Sequence[Match], weights: Sequence[float], rho: float

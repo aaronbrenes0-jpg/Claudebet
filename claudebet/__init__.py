@@ -30,8 +30,10 @@ from .backtest import run as backtest
 from .blend import blend, weight_from_evidence
 from .calibration import IsotonicCalibrator, PlattCalibrator, brier_score, skill_score
 from .correlation import ParlayLeg, parlay
+from .counts import NegativeBinomial, Poisson, fit_counts
 from .devig import devig, devig_spread
 from .edge import evaluate, expected_roi, kelly_fraction
+from .form import FormModel, MatchLog, MatchRecord
 from .market import Market, Quote, consensus, movement
 from .odds import american_to_decimal, decimal_to_american, parse_odds
 from .pipeline import AnalysisConfig, analyze, analyze_slate
@@ -44,10 +46,15 @@ __all__ = [
     "AnalysisConfig",
     "BetLog",
     "Candidate",
+    "FormModel",
     "IsotonicCalibrator",
     "Market",
+    "MatchLog",
+    "MatchRecord",
+    "NegativeBinomial",
     "ParlayLeg",
     "PlattCalibrator",
+    "Poisson",
     "Quote",
     "SettledBet",
     "american_to_decimal",
@@ -63,6 +70,7 @@ __all__ = [
     "devig_spread",
     "evaluate",
     "expected_roi",
+    "fit_counts",
     "kelly_fraction",
     "movement",
     "optimize",

@@ -33,16 +33,21 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Sequence
+
+if TYPE_CHECKING:  # avoids a circular import at runtime
+    from ..form import MatchLog
 
 from ..market import Market, Quote
 
 __all__ = [
     "load_json",
     "load_csv",
+    "load_match_log",
     "from_the_odds_api",
     "OddsApiClient",
     "write_template",
+    "write_match_log_template",
 ]
 
 _MARKET_NAMES = {
@@ -141,6 +146,77 @@ def load_csv(path: str | Path, market_column: str = "market") -> list[Market]:
             )
         )
     return markets
+
+
+def load_match_log(path: str | Path) -> "MatchLog":
+    """Load a results file into a :class:`claudebet.form.MatchLog`.
+
+    One row per completed match. Required columns: ``date``, ``home``, ``away``.
+    Every other column named ``home_<stat>`` with a matching ``away_<stat>``
+    becomes a tracked statistic, so you decide what to feed the model just by
+    what you put in the file::
+
+        date,home,away,home_goals,away_goals,home_corners,away_corners,home_cards,away_cards
+        2026-02-01,Alianza,Cristal,2,1,7,4,2,3
+
+    ``goals`` is the only name treated specially -- results and every
+    goal-derived market come from it. Add ``home_shots``/``away_shots``,
+    ``home_offsides``/``away_offsides``, or anything else and it gets modelled
+    and priced the same way. Unpaired columns are ignored rather than guessed
+    at. Optional columns: ``competition``, ``neutral``.
+    """
+    from ..form import MatchLog, MatchRecord
+
+    rows = list(csv.DictReader(Path(path).open(newline="")))
+    if not rows:
+        raise ValueError(f"{path} has no rows")
+
+    fields = list(rows[0])
+    stats = [
+        name[len("home_") :]
+        for name in fields
+        if name.startswith("home_") and f"away_{name[len('home_'):]}" in fields
+    ]
+    if not stats:
+        raise ValueError(
+            f"{path} has no paired home_*/away_* columns; expected at least "
+            "home_goals and away_goals"
+        )
+
+    def number(value: str | None) -> float | None:
+        if value is None or str(value).strip() == "":
+            return None
+        try:
+            return float(value)
+        except ValueError:
+            return None
+
+    records = []
+    for row in rows:
+        home_stats, away_stats = {}, {}
+        for stat in stats:
+            h, a = number(row.get(f"home_{stat}")), number(row.get(f"away_{stat}"))
+            if h is None or a is None:
+                continue  # a missing half makes the pair unusable for this match
+            home_stats[stat] = h
+            away_stats[stat] = a
+        if not home_stats:
+            continue
+        neutral = str(row.get("neutral", "")).strip().lower() in ("1", "true", "yes", "y")
+        records.append(
+            MatchRecord(
+                home=(row.get("home") or "").strip(),
+                away=(row.get("away") or "").strip(),
+                home_stats=home_stats,
+                away_stats=away_stats,
+                when=_parse_time(row.get("date") or row.get("when")),
+                competition=(row.get("competition") or "").strip(),
+                neutral=neutral,
+            )
+        )
+    if not records:
+        raise ValueError(f"{path} produced no usable matches")
+    return MatchLog(records)
 
 
 def from_the_odds_api(
@@ -283,4 +359,78 @@ def write_template(path: str | Path) -> Path:
     """Drop a filled-in example file to edit."""
     target = Path(path)
     target.write_text(json.dumps(_TEMPLATE, indent=2) + "\n")
+    return target
+
+
+_MATCH_LOG_HEADER = (
+    "date,home,away,home_goals,away_goals,home_corners,away_corners,home_cards,away_cards,home_shots,away_shots\n"
+)
+_MATCH_LOG_ROWS = [
+    "2025-08-03,Melgar,Boys,4,3,12,12,2,4,12,13",
+    "2025-08-03,Melgar,Cienciano,1,1,4,4,6,1,12,10",
+    "2025-08-03,Alianza Lima,Universitario,2,1,7,7,3,1,16,4",
+    "2025-08-07,Boys,Cienciano,1,3,3,5,3,1,6,6",
+    "2025-08-07,Cienciano,Melgar,0,1,10,7,2,1,12,5",
+    "2025-08-07,Alianza Lima,Cienciano,3,0,5,0,5,0,14,8",
+    "2025-08-11,Alianza Lima,Cienciano,2,1,7,1,3,0,16,9",
+    "2025-08-11,Universitario,Alianza Lima,1,1,12,2,0,4,9,15",
+    "2025-08-11,Alianza Lima,Boys,4,0,9,5,3,1,16,6",
+    "2025-08-15,Alianza Lima,Boys,1,1,8,9,4,0,13,7",
+    "2025-08-15,Universitario,Melgar,1,2,12,3,7,2,15,12",
+    "2025-08-15,Boys,Universitario,2,0,14,7,0,2,12,13",
+    "2025-08-19,Cienciano,Universitario,2,0,5,2,1,1,10,11",
+    "2025-08-19,Melgar,Boys,3,0,4,7,3,1,7,12",
+    "2025-08-19,Cienciano,Universitario,0,2,8,2,1,2,15,9",
+    "2025-08-23,Cienciano,Boys,2,1,6,6,4,0,12,9",
+    "2025-08-23,Sporting Cristal,Boys,5,1,3,3,3,0,13,12",
+    "2025-08-23,Universitario,Boys,4,1,5,7,3,2,16,8",
+    "2025-08-27,Melgar,Universitario,1,1,7,6,3,1,11,11",
+    "2025-08-27,Cienciano,Sporting Cristal,2,1,2,3,1,1,8,14",
+    "2025-08-27,Universitario,Alianza Lima,0,3,3,1,1,3,16,7",
+    "2025-08-31,Alianza Lima,Melgar,0,1,6,6,1,2,16,9",
+    "2025-08-31,Boys,Sporting Cristal,1,0,2,5,2,2,7,11",
+    "2025-08-31,Melgar,Sporting Cristal,0,0,4,2,3,3,9,10",
+    "2025-09-04,Cienciano,Melgar,1,1,7,7,2,2,8,9",
+    "2025-09-04,Alianza Lima,Sporting Cristal,1,1,6,4,2,5,16,16",
+    "2025-09-04,Boys,Alianza Lima,0,2,8,4,3,2,4,4",
+    "2025-09-08,Melgar,Universitario,3,2,5,2,0,3,9,5",
+    "2025-09-08,Universitario,Sporting Cristal,3,1,5,3,5,2,12,11",
+    "2025-09-08,Sporting Cristal,Cienciano,2,0,6,3,5,3,16,13",
+    "2025-09-12,Universitario,Melgar,2,0,7,5,1,3,12,9",
+    "2025-09-12,Universitario,Cienciano,5,2,7,4,0,1,5,4",
+    "2025-09-12,Boys,Melgar,1,0,3,7,0,3,12,9",
+    "2025-09-16,Melgar,Alianza Lima,3,2,8,7,4,2,13,15",
+    "2025-09-16,Boys,Alianza Lima,2,3,1,4,1,2,7,15",
+    "2025-09-16,Universitario,Cienciano,3,0,10,5,0,4,16,9",
+    "2025-09-20,Cienciano,Boys,1,1,5,8,2,1,2,5",
+    "2025-09-20,Melgar,Cienciano,1,1,5,4,2,1,12,8",
+    "2025-09-20,Boys,Cienciano,2,1,7,2,3,1,14,5",
+    "2025-09-24,Sporting Cristal,Alianza Lima,1,1,7,5,4,0,16,16",
+    "2025-09-24,Cienciano,Sporting Cristal,3,1,9,6,3,3,16,11",
+    "2025-09-24,Alianza Lima,Sporting Cristal,0,0,7,6,1,5,15,14",
+    "2025-09-28,Melgar,Alianza Lima,0,1,10,3,0,3,16,13",
+    "2025-09-28,Boys,Melgar,0,3,3,4,3,0,6,10",
+    "2025-09-28,Sporting Cristal,Melgar,1,1,0,7,3,3,15,9",
+    "2025-10-02,Alianza Lima,Universitario,1,1,8,4,1,0,16,5",
+    "2025-10-02,Melgar,Sporting Cristal,3,0,7,6,6,0,15,15",
+    "2025-10-02,Cienciano,Alianza Lima,1,1,5,3,3,2,9,14",
+    "2025-10-06,Sporting Cristal,Universitario,1,0,4,3,3,0,16,15",
+    "2025-10-06,Boys,Sporting Cristal,0,2,11,2,2,0,5,11",
+    "2025-10-06,Sporting Cristal,Alianza Lima,2,1,5,2,3,2,16,15",
+    "2025-10-10,Sporting Cristal,Boys,0,1,6,8,1,1,11,14",
+    "2025-10-10,Sporting Cristal,Cienciano,2,0,4,3,0,7,13,8",
+    "2025-10-10,Universitario,Boys,4,0,5,2,2,1,7,13",
+    "2025-10-14,Sporting Cristal,Universitario,2,0,5,6,1,1,16,15",
+    "2025-10-14,Universitario,Sporting Cristal,2,4,3,4,1,1,10,9",
+    "2025-10-14,Boys,Universitario,3,0,7,7,3,1,13,14",
+    "2025-10-18,Alianza Lima,Melgar,0,1,7,3,1,5,12,7",
+    "2025-10-18,Cienciano,Alianza Lima,1,1,8,3,0,2,8,16",
+    "2025-10-18,Sporting Cristal,Melgar,3,3,3,3,0,2,14,10",
+]
+
+
+def write_match_log_template(path: str | Path) -> Path:
+    """Drop an example results file showing the expected column layout."""
+    target = Path(path)
+    target.write_text(_MATCH_LOG_HEADER + "\n".join(_MATCH_LOG_ROWS) + "\n")
     return target

@@ -22,6 +22,7 @@ from claudebet import (
     parlay,
     weight_from_evidence,
 )
+from claudebet.counts import Poisson
 from claudebet.devig import devig
 from claudebet.models import DixonColes, Elo, PowerRatings
 from claudebet.models.elo import EloConfig, GameResult
@@ -233,6 +234,111 @@ print(f"    -1.5 AH     {sl.asian_handicap(-1.5)['home']:.1%}")
 print("    top scores  "
       + ", ".join(f"{s} {p:.1%}" for s, p in sl.top_scorelines(4)))
 print(f"    low-score correction rho = {dc.rho:+.3f}")
+
+
+# ------------------------------------------------------ 5b. recent form
+rule("5b. Reading the last 5 games without fooling yourself")
+
+from claudebet.form import FormModel, MatchLog, MatchRecord
+
+form_rng = random.Random(21)
+CLUBS = ["Alianza", "Cristal", "Universitario", "Melgar", "Cienciano", "Boys",
+         "Grau", "Huancayo", "Vallejo", "Municipal"]
+club_attack = {t: 1.35 - 0.075 * i for i, t in enumerate(CLUBS)}
+club_concede = {t: 0.75 + 0.075 * i for i, t in enumerate(CLUBS)}
+
+
+def build_log(form_swing: float, tail_games: int = 40, n: int = 900) -> MatchLog:
+    """A league where team strength is known, corners carry shared match-tempo
+    noise, and `form_swing` controls whether recent form is real or illusory.
+
+    The swing runs across each team's last `tail_games` matches, so windows of
+    5, 10 and 20 all sit inside it and can be compared on equal terms.
+    """
+    rng = random.Random(21)
+    hot = {t: (1 + form_swing if i % 2 == 0 else 1 - form_swing)
+           for i, t in enumerate(CLUBS)}
+    cutoff = n - (tail_games * len(CLUBS)) // 2
+    records, start = [], date(2025, 1, 1)
+
+    def sample(lam: float) -> int:
+        limit, k, p = math.exp(-lam), 0, 1.0
+        while True:
+            p *= rng.random()
+            if p <= limit:
+                return k
+            k += 1
+            if k > 40:
+                return k
+
+    for i in range(n):
+        h, a = rng.sample(CLUBS, 2)
+        recent = i > cutoff
+        fh, fa = (hot[h] if recent else 1.0), (hot[a] if recent else 1.0)
+        tempo = math.exp(rng.gauss(0, 0.30))
+        records.append(MatchRecord(
+            h, a,
+            {"goals": sample(1.3 * club_attack[h] * club_concede[a] * 1.15 * fh),
+             "corners": sample(5.0 * 1.15 * tempo), "cards": sample(2.1)},
+            {"goals": sample(1.3 * club_attack[a] * club_concede[h] / 1.15 * fa),
+             "corners": sample(5.0 / 1.15 * tempo), "cards": sample(2.1)},
+            when=start + timedelta(days=i // 4)))
+    return MatchLog(records)
+
+
+log = build_log(form_swing=0.0)  # strengths constant: any streak is noise
+form = FormModel(window=5).fit(log)
+
+print("  Last 5 games, straight from the results:")
+for club in ("Alianza", "Municipal"):
+    print("    " + log.team_form(club, 5).line())
+
+print("\n  Those raw numbers look like information. Here is what survives once")
+print("  you ask whether they differ from noise by more than noise predicts:")
+for stat, sm in sorted(form.stat_models.items()):
+    lo = min(sm.form_attack.values())
+    hi = max(sm.form_attack.values())
+    verdict = ("no detectable form" if sm.shrinkage_form >= 1e5
+               else f"form retained, k={sm.shrinkage_form:.1f}")
+    print(f"    {stat:<9} multipliers {lo:.3f}-{hi:.3f}   {verdict}")
+print("  In this league strengths never changed, so the honest answer is that")
+print("  every streak was noise -- and that is what comes back.")
+
+print("\n  Now a league where the goal form IS real (+/-35% swings), read at")
+print("  three different window lengths:")
+real_log = build_log(form_swing=0.35)
+for w in (5, 10, 20):
+    sm = FormModel(window=w).fit(real_log).stat_models["goals"]
+    lo, hi = min(sm.form_attack.values()), max(sm.form_attack.values())
+    verdict = ("nothing detected -- too few games"
+               if sm.shrinkage_form >= 1e5 else f"detected, k={sm.shrinkage_form:.0f}")
+    print(f"    last {w:>2} games, goals: multipliers {lo:.3f}-{hi:.3f}   {verdict}")
+print("\n  This is the direct answer to 'should I look at 5 or 10 games'. Five")
+print("  is often too few to separate a real swing from noise; the extra games")
+print("  are what buy the resolution. And note the detected multipliers stay")
+print("  well inside the true +/-35% -- shrinkage keeps the estimate honest")
+print("  even once the signal is real.")
+
+corners_sm = FormModel(window=20).fit(real_log).stat_models["corners"]
+lo, hi = min(corners_sm.form_attack.values()), max(corners_sm.form_attack.values())
+print(f"\n  Corners over the same 20 games: {lo:.3f}-{hi:.3f} -- nothing, correctly,")
+print("  because nothing was done to the corners. The test discriminates")
+print("  between statistics instead of finding a story in all of them.")
+
+print("\n  Dispersion actually measured from the match log:")
+for stat, sm in sorted(form.stat_models.items()):
+    kind = "Poisson" if sm.dispersion_total <= 1.15 else "negative binomial"
+    print(f"    {stat:<9} variance/mean {sm.dispersion_total:.2f}  -> {kind}")
+
+projection = form.project("Alianza", "Municipal")
+print()
+print("  " + projection.report().replace("\n", "\n  "))
+
+poisson_over = Poisson(projection.total_distribution("corners").mean).over(10.5)
+actual_over = projection.total_distribution("corners").over(10.5)
+print(f"\n  Corners over 10.5: {actual_over:.1%} properly, {poisson_over:.1%} if you")
+print("  had assumed Poisson. Pricing that gap as edge is how the corner")
+print("  markets take money off people.")
 
 
 # ------------------------------------------------------- 6. how much weight

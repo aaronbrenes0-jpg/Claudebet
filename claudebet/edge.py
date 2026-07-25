@@ -56,6 +56,20 @@ def kelly_fraction(prob: float, odds: float) -> float:
     return (prob * b - (1.0 - prob)) / b
 
 
+def _continuous_american(decimal: float) -> float:
+    """American odds on a scale without the gap at even money.
+
+    The American scale jumps from -100 straight to +100: there is no price in
+    between, so two odds either side of evens are 200 apart on paper while
+    being adjacent in reality. Subtracting them directly reports a 6-cent edge
+    as 206. Shifting the negative branch up by 200 closes the gap and makes the
+    scale continuous and monotone, which is what a difference needs to be
+    meaningful.
+    """
+    american = decimal_to_american(decimal)
+    return american if decimal >= 2.0 else american + 200.0
+
+
 def cents_of_edge(fair_prob: float, odds: float) -> float:
     """Edge expressed in American cents, the way traders quote it.
 
@@ -65,7 +79,7 @@ def cents_of_edge(fair_prob: float, odds: float) -> float:
     """
     d = parse_odds(odds)
     fair_d = 1.0 / max(min(fair_prob, 1 - 1e-9), 1e-9)
-    return abs(decimal_to_american(d) - decimal_to_american(fair_d))
+    return abs(_continuous_american(d) - _continuous_american(fair_d))
 
 
 @dataclass(frozen=True)
