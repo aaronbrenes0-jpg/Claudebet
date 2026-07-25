@@ -333,9 +333,84 @@ def _jsonable(value):
     return value
 
 
+def cmd_scan(args: argparse.Namespace) -> int:
+    from .data.sources import load_match_log
+    from .scan import ScanConfig, load_fixtures, scan
+
+    log = load_match_log(args.log)
+    fixtures, date, book = load_fixtures(args.fixtures)
+    if not fixtures:
+        raise SystemExit(f"{args.fixtures} contains no matches")
+
+    cfg = ScanConfig(
+        window=args.last,
+        min_edge=args.min_edge,
+        kelly_multiplier=args.kelly,
+        max_stake_fraction=args.max_stake,
+        max_slate_exposure=args.max_exposure,
+        trust_scale=args.trust,
+    )
+    result = scan(log, fixtures, cfg, bankroll=args.bankroll,
+                  book=args.book or book, date=date)
+    if args.json:
+        print(json.dumps([vars(c) for c in
+                          (result.all_candidates if args.all else result.bets)],
+                         indent=2))
+        return 0
+    print(result.report(bankroll=args.bankroll))
+    return 0
+
+
+def cmd_trends(args: argparse.Namespace) -> int:
+    from .data.sources import load_match_log
+    from .trends import scan_trends, team_trends
+
+    log = load_match_log(args.log)
+    if args.team:
+        if args.team not in log.teams():
+            raise SystemExit(f"unknown team; log has: {', '.join(log.teams())}")
+        results = team_trends(log, args.team, window=args.last)
+        print(f"{args.team} -- last {args.last} games\n")
+        if not results:
+            print("  no streak worth the name")
+            return 0
+        for trend in results:
+            print("  " + trend.line())
+        return 0
+
+    summary = scan_trends(log, window=args.last)
+    print(f"checked {summary['conditions_checked']} team/condition combinations "
+          f"over the last {args.last} games")
+    print(f"perfect streaks found: {summary['perfect_streaks']}")
+    print(f"perfect streaks expected by pure chance: "
+          f"{summary['expected_by_chance']:.1f}")
+    print()
+    if summary["perfect_streaks"] <= summary["expected_by_chance"]:
+        print("Read that twice. This screen found no more perfect streaks than")
+        print("random chance produces on its own, so none of them are evidence")
+        print("of anything. This is the usual result.")
+        print()
+    shown = summary["notable"] or summary["trends"]
+    header = ("streaks unlikely to be luck:" if summary["notable"]
+              else "longest streaks (none of them statistically unusual):")
+    print(header)
+    for trend in shown[: args.top]:
+        print(f"  {trend.team:<22} " + trend.line())
+    return 0
+
+
 def cmd_template(args: argparse.Namespace) -> int:
     from .data.sources import write_match_log_template, write_template
 
+    if getattr(args, "fixtures", False):
+        from .scan import write_fixtures_template
+
+        path = write_fixtures_template(args.path or "today.json")
+        print(
+            f"wrote {path}\nfill in today's odds from the app, then:\n"
+            f"  claudebet scan {path} --log matches.csv --bankroll 200"
+        )
+        return 0
     if args.log:
         path = write_match_log_template(args.path or "matches.csv")
         print(
@@ -436,10 +511,38 @@ def build_parser() -> argparse.ArgumentParser:
     fm.add_argument("--json", action="store_true", help="dump every market")
     fm.set_defaults(func=cmd_form)
 
+    sc = sub.add_parser(
+        "scan", help="analyse a whole day's fixtures at one book and rank them"
+    )
+    sc.add_argument("fixtures", help="JSON of today's matches and odds")
+    sc.add_argument("--log", required=True, help="CSV match log of past results")
+    sc.add_argument("--bankroll", type=float, default=0.0)
+    sc.add_argument("--last", type=int, default=5, help="form window (default 5)")
+    sc.add_argument("--min-edge", type=float, default=0.03,
+                    help="required edge; higher because there is only one book")
+    sc.add_argument("--kelly", type=float, default=0.25)
+    sc.add_argument("--max-stake", type=float, default=0.02)
+    sc.add_argument("--max-exposure", type=float, default=0.10)
+    sc.add_argument("--trust", type=float, default=1.0,
+                    help="scale how much the model may outvote the book (0-1+)")
+    sc.add_argument("--book", default="")
+    sc.add_argument("--all", action="store_true", help="with --json, dump everything")
+    sc.add_argument("--json", action="store_true")
+    sc.set_defaults(func=cmd_scan)
+
+    tr = sub.add_parser("trends", help="find recent streaks, and test them for luck")
+    tr.add_argument("log", help="CSV match log of past results")
+    tr.add_argument("--team", help="one team; omit to screen the whole league")
+    tr.add_argument("--last", type=int, default=5)
+    tr.add_argument("--top", type=int, default=15)
+    tr.set_defaults(func=cmd_trends)
+
     t = sub.add_parser("template", help="write an example input file")
     t.add_argument("path", nargs="?")
     t.add_argument("--log", action="store_true",
                    help="write a match-log CSV instead of a market file")
+    t.add_argument("--fixtures", action="store_true",
+                   help="write a day-of-fixtures JSON for `claudebet scan`")
     t.set_defaults(func=cmd_template)
 
     f = sub.add_parser("fetch", help="pull live odds from the-odds-api.com")

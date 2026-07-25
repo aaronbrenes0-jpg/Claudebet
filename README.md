@@ -13,12 +13,78 @@ It answers three questions, in this order:
 3. **How much should I bet?** Fractional Kelly, sized across the whole slate at
    once, under per-bet and total-exposure caps.
 
-## Quick start
+## Quick start: scanning a day at one bookmaker
+
+If you bet at a single book — which is most people — this is the workflow.
 
 ```bash
 git clone <this repo> && cd Claudebet
-pip install -e .          # or just run with PYTHONPATH=.
+pip install -e .                              # or just run with PYTHONPATH=.
 
+claudebet template matches.csv --log          # past results go here
+claudebet template today.json --fixtures      # today's odds go here
+claudebet scan today.json --log matches.csv --bankroll 200
+```
+
+You get back something like this:
+
+```
+== doradobet scan: 2026-07-26 ==
+3 matches, 31 prices checked, 31 selections considered
+
+TOP BETS -- ranked by value, not by how likely they are to win
+  #  MATCH                    BET                  ODDS  MODEL  NEEDS   EDGE     EV  RECENT  STAKE
+  1  Alianza Lima v Boys      corners_9.5 over     2.40  50.0%  41.7%  +8.3% +19.9%    6/10   4.00
+
+  MODEL is how often we think it happens. NEEDS is how often it
+  must happen for the price to be fair. The gap is the only money.
+
+FLAGGED -- the model disagrees with the book far too much
+  Melgar v Sporting Cristal   1X2 home             we say 51%, book says 30%
+  A gap that size is almost always your data, not their mistake.
+
+ALREADY PRICED IN -- real trends, but the odds are too short
+  Alianza Lima v Boys   shots_home_12.5 over   hit 4/5   odds 1.15
+  needs 87%, we make it 79%  -> -12.1% per unit
+```
+
+**Read the MODEL and NEEDS columns together.** That last section is the one
+worth internalising. "Over 12.5 shots, hit in 4 of the last 5" is a real
+pattern, and it is still a losing bet, because 1.15 needs it to land 87% of the
+time and it only lands 79%. Likely and profitable are different things. The
+book can see the same five games you can, and it has already moved the price.
+
+Also expect the honest answer often to be *nothing today*. On a normal card
+where the book has priced everything sensibly, there is no bet, and the tool
+says so rather than inventing one.
+
+### Finding trends, and testing whether they mean anything
+
+```bash
+claudebet trends matches.csv --team "Alianza Lima" --last 5
+claudebet trends matches.csv                     # screen the whole league
+```
+
+Every streak comes with the probability of seeing a run that good by pure
+chance:
+
+```
+both teams score         4/5  [YYYNY]  season rate 59%  -> ordinary -- happens 32% of the time anyway
+team over 0.5 cards      5/5  [YYYYY]  season rate 91%  -> ordinary -- happens 62% of the time anyway
+```
+
+Five-from-five sounds like a lot. At a 91% base rate it happens most of the
+time. The league-wide screen goes further and reports how many perfect streaks
+pure chance would produce across every team and condition it checked — usually
+about as many as it found, which is the honest reason trend screens feel so
+productive and pay so badly.
+
+## The multi-book version
+
+If you can reach more than one bookmaker, use `analyze` instead — comparing
+prices between books is a far stronger position than trusting a model.
+
+```bash
 claudebet template market.json
 claudebet analyze market.json --bankroll 1000
 ```
@@ -92,6 +158,8 @@ you can see which side of that line you are on.
 | `odds` | Conversion between decimal, American, fractional, implied. Overround and hold. |
 | `devig` | Five ways to remove the margin: multiplicative, additive, power, Shin, odds-ratio. |
 | `market` | Consensus fair prices across books, line shopping, arbitrage, steam detection. |
+| `scan` | Rank a whole day's fixtures at one book by value, not by hit rate. |
+| `trends` | Recent streaks, each tested against the chance of it being luck. |
 | `form` | Last-N form from a match log into probabilities for every market. |
 | `counts` | Poisson and negative binomial for goals, corners, cards; over/under pricing. |
 | `blend` | Log-linear pooling of model and market, with an evidence-based weight. |
@@ -204,6 +272,11 @@ claudebet template market.json            example inputs (--log for a match log)
   behind it. A handful of games per team will correctly produce no form signal
   at all rather than a confident guess — that is the design, but it does mean
   you need a real results file to get value from it.
+- **One bookmaker is a hard place to bet from.** With several books you can
+  compare prices, which needs no model at all. With one, every bet rests on
+  your model being better than theirs — so `scan` demands a 3-point edge rather
+  than 1.5, charges a wider error bar, and refuses outright when the model and
+  the book disagree so much that a data problem is the likelier explanation.
 - **Books limit winners.** Beating a soft book reliably gets you restricted. This
   is a property of the business, not of the software.
 
@@ -213,5 +286,5 @@ money. Bet only what you can afford to lose.
 ## Tests
 
 ```bash
-python -m pytest tests -q     # 269 tests
+python -m pytest tests -q     # 311 tests
 ```
