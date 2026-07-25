@@ -35,8 +35,9 @@ python --version
 You should see something like `Python 3.12.1`. If it says "not recognised",
 Python is not installed or you missed the PATH tickbox — reinstall and tick it.
 
-> On Mac, and on some Linux setups, use `python3` and `pip3` everywhere below
-> instead of `python` and `pip`.
+> **On a Mac, the commands are `python3` and `pip3`, not `python` and `pip`.**
+> Plain `pip` does not exist there and you will get
+> `zsh: command not found: pip`. Every command below shows both.
 
 ---
 
@@ -57,25 +58,56 @@ terminal `cd` into the unzipped folder.
 
 ---
 
-## Step 3 — Install it
+## Step 3 — Run it
+
+### The simple way: no install at all
+
+You do not actually have to install anything. From inside the `Claudebet`
+folder, this works immediately:
 
 ```
-pip install -e .
+python3 -m claudebet.cli --version        # Mac / Linux
+python  -m claudebet.cli --version        # Windows
 ```
 
-That is all — it has no other software to download.
+You should see `claudebet 0.1.0`. If you use this way, **stay in the Claudebet
+folder** and write `python3 -m claudebet.cli` everywhere the rest of this guide
+says `claudebet`. So:
 
-**Check it worked:**
+```
+python3 -m claudebet.cli ask matches.csv
+```
+
+That is the whole trick. Nothing to install, nothing to configure.
+
+### The tidier way: install it once
+
+If you would rather type just `claudebet`:
+
+```
+pip3 install -e .        # Mac / Linux
+pip  install -e .        # Windows
+```
+
+Then check:
 
 ```
 claudebet --version
 ```
 
-You should see `claudebet 0.1.0`.
+If that prints `command not found: claudebet` even though the install
+succeeded, your Python scripts folder is not on PATH. Do not fight it — just
+use the `python3 -m claudebet.cli` form above. It behaves identically.
 
-> If `claudebet` is "not recognised" but the install said it succeeded, use
-> `python -m claudebet.cli` in place of `claudebet` in every command below.
-> Everything else is identical.
+If `pip3 install` complains about an **externally-managed-environment**, make a
+private workspace for it:
+
+```
+python3 -m venv .venv
+source .venv/bin/activate       # Mac / Linux
+.venv\Scripts\activate           # Windows
+pip install -e .
+```
 
 ---
 
@@ -86,11 +118,20 @@ claudebet template matches.csv --log
 claudebet ask matches.csv
 ```
 
-Then type a game and press Enter:
+The tool then starts and shows its own prompt, a `>` character. **Type the game
+at that prompt — not into the terminal.**
 
 ```
 > Alianza Lima vs Boys
 ```
+
+This trips everyone up once. The `>` in these instructions means "the tool is
+now waiting for you". If you paste `> Alianza Lima vs Boys` into the terminal
+before the tool is running, the terminal will answer
+`command not found: Alianza`, because it is trying to run "Alianza" as a
+program.
+
+Same rule for prices: `over 2.5 @ 1.85` goes at the tool's `>` prompt.
 
 You will get a full odds card. Type `quit` to leave.
 
@@ -162,7 +203,10 @@ claudebet trends matches.csv --team "Universitario"
 | What you see | What to do |
 |---|---|
 | `python is not recognised` | Python not installed, or PATH box unticked. Reinstall. |
-| `claudebet is not recognised` | Use `python -m claudebet.cli ...` instead. |
+| `command not found: pip` | You are on a Mac. Use `pip3`, or skip installing and use `python3 -m claudebet.cli`. |
+| `command not found: claudebet` | Not installed, or not on PATH. Use `python3 -m claudebet.cli ...` from the Claudebet folder. |
+| `command not found: Alianza` / `Inter` | You typed a game into the terminal instead of at the tool's `>` prompt. Start the tool first. |
+| `externally-managed-environment` | Make a venv — see Step 3. |
 | `no such file: matches.csv` | You are in the wrong folder. `cd` to where the file is. |
 | `no paired home_*/away_* columns` | A column is missing its partner, or a header is misspelt. |
 | `unknown team` | Check spelling against the list it prints. |
