@@ -25,7 +25,7 @@ If you bet at a single book — which is most people — this is the workflow.
 git clone <this repo> && cd Claudebet
 pip install -e .                              # or just run with PYTHONPATH=.
 
-claudebet template matches.csv --log          # past results go here
+claudebet fetch-results --league E0 --seasons 2425,2324   # real past results
 claudebet template today.json --fixtures      # today's odds go here
 claudebet scan today.json --log matches.csv --bankroll 200
 ```
@@ -212,6 +212,7 @@ you can see which side of that line you are on.
 | `devig` | Five ways to remove the margin: multiplicative, additive, power, Shin, odds-ratio. |
 | `market` | Consensus fair prices across books, line shopping, arbitrage, steam detection. |
 | `ask` | Interactive: name a game, get its odds card; check a price in plain English. |
+| `fetch` | Download real results (goals, corners, shots, cards) from football-data.co.uk. |
 | `scan` | Rank a whole day's fixtures at one book by value, not by hit rate. |
 | `trends` | Recent streaks, each tested against the chance of it being luck. |
 | `form` | Last-N form from a match log into probabilities for every market. |
@@ -340,5 +341,5 @@ money. Bet only what you can afford to lose.
 ## Tests
 
 ```bash
-python -m pytest tests -q     # 357 tests
+python -m pytest tests -q     # 386 tests
 ```

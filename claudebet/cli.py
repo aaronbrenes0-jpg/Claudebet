@@ -363,6 +363,66 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fetch_results(args: argparse.Namespace) -> int:
+    from .fetch import LEAGUES, NOT_COVERED, fetch, write_results_csv
+
+    if args.list:
+        print("Leagues with corners, shots and cards:")
+        for league in LEAGUES.values():
+            if league.detailed:
+                print(f"  {league.code:<5} {league.name}")
+        print("\nLeagues with goals only (no corners/shots/cards):")
+        for league in LEAGUES.values():
+            if not league.detailed:
+                print(f"  {league.code:<5} {league.name}")
+        print(f"\nNot available: {NOT_COVERED}")
+        return 0
+
+    if not args.league:
+        raise SystemExit("say which league, e.g. --league E0 (or --list to see them)")
+
+    target = Path(args.out)
+    if target.exists() and not args.force:
+        from .data.sources import load_match_log
+
+        try:
+            existing = load_match_log(target)
+            protected = not existing.is_example_data
+        except ValueError:
+            protected = True
+        if protected:
+            raise SystemExit(
+                f"{target} already exists and does not look like the example file. "
+                "Re-run with --force to overwrite it, or choose another --out."
+            )
+
+    seasons = [s.strip() for s in args.seasons.split(",") if s.strip()]
+    try:
+        rows, notes = fetch(args.league, seasons)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    if not rows:
+        raise SystemExit(
+            "no matches came back. Check the league code and the seasons; "
+            "the current season may not have started."
+        )
+
+    write_results_csv(rows, target)
+    teams = sorted({r["home"] for r in rows} | {r["away"] for r in rows})
+    stats = sorted(
+        k[5:] for k in rows[0] if k.startswith("home_")
+    )
+    print(f"wrote {len(rows)} matches to {target}")
+    print(f"  teams   {len(teams)}")
+    print(f"  stats   {', '.join(stats)}")
+    for note in notes:
+        print(f"  note    {note}")
+    print()
+    print(f'try:  claudebet ask {target}')
+    return 0
+
+
 def _warn_if_example(log) -> None:
     """Shout when the loaded results are the shipped sample.
 
@@ -621,6 +681,19 @@ def build_parser() -> argparse.ArgumentParser:
                     help="season strength only, ignoring the recent window")
     fm.add_argument("--json", action="store_true", help="dump every market")
     fm.set_defaults(func=cmd_form)
+
+    fr = sub.add_parser(
+        "fetch-results",
+        help="download real past results so you do not type them in",
+    )
+    fr.add_argument("--league", help="league code, e.g. E0. Use --list to see them")
+    fr.add_argument("--seasons", default="2425",
+                    help="comma separated, e.g. 2425,2324,2223 (default 2425)")
+    fr.add_argument("--out", default="matches.csv")
+    fr.add_argument("--list", action="store_true", help="show available leagues")
+    fr.add_argument("--force", action="store_true",
+                    help="overwrite --out even if it holds your own data")
+    fr.set_defaults(func=cmd_fetch_results)
 
     ak = sub.add_parser(
         "ask", help="ask about one game and get its odds (interactive)"

@@ -141,9 +141,42 @@ the commands run before you have typed anything in — nothing more.
 
 ---
 
-## Step 5 — Put in real results
+## Step 5 — Get real results
 
-This is the actual work, and there is no way around it. Open `matches.csv` in
+### Download them (do this first)
+
+For most leagues you do not have to type anything. See what is available:
+
+```
+claudebet fetch-results --list
+```
+
+Then grab a couple of seasons:
+
+```
+claudebet fetch-results --league E0 --seasons 2425,2324 --out matches.csv
+```
+
+That is the Premier League, two seasons, about 760 matches with goals,
+corners, shots, shots on target, fouls and cards. It is free and needs no
+account. `SP1` is La Liga, `I1` Serie A, `D1` Bundesliga, `F1` Ligue 1,
+`P1` Portugal, and so on.
+
+**Two limits worth knowing before you pick a league:**
+
+- **MLS, Argentina, Brazil, Mexico and similar carry goals only** — no corners,
+  shots or cards. Match result, goal totals and both-teams-to-score still work;
+  corner and card markets cannot, because the numbers are not in the feed. The
+  command tells you when this applies.
+- **Peru, Colombia, Chile and Ecuador are not covered at all.** If those are
+  what you mainly bet, you need either a paid feed (api-football.com has a
+  small free tier) or the by-hand route below.
+
+Once downloaded, go straight to Step 6 — you are done.
+
+### Or type them in by hand
+
+Only needed for leagues the download does not cover. Open `matches.csv` in
 Excel, Google Sheets or Notepad, delete every example row, and enter real
 finished matches — one row per match:
 
