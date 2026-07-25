@@ -361,6 +361,98 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ask(args: argparse.Namespace) -> int:
+    from .ask import (
+        check_price,
+        match_team,
+        odds_card,
+        parse_fixture,
+        parse_market_phrase,
+    )
+    from .data.sources import load_match_log
+    from .form import FormModel, MatchProjection
+    from .scan import ScanConfig
+
+    log = load_match_log(args.log)
+    model = FormModel(window=args.last).fit(log)
+    cfg = ScanConfig(window=args.last, min_edge=args.min_edge,
+                     max_stake_fraction=args.max_stake, trust_scale=args.trust)
+    teams = log.teams()
+    stats = list(model.stat_models)
+
+    def show(home: str, away: str) -> MatchProjection:
+        projection = model.project(home, away)
+        print()
+        print(odds_card(projection, cfg, stats))
+        return projection
+
+    # One-shot mode.
+    if args.home and args.away:
+        home, away = match_team(args.home, teams), match_team(args.away, teams)
+        if not home or not away:
+            raise SystemExit(
+                f"could not find those teams. Known: {', '.join(teams)}"
+            )
+        projection = show(home, away)
+        for spec in args.price or []:
+            phrase = parse_market_phrase(spec, stats, home, away)
+            if phrase is None:
+                print(f"\n  could not read {spec!r}")
+                continue
+            outcome = check_price(projection, phrase, cfg, args.bankroll)
+            print()
+            print(outcome if isinstance(outcome, str) else outcome.render(args.bankroll))
+        return 0
+
+    # Interactive mode.
+    print(f"{len(log)} matches loaded, {len(teams)} teams, "
+          f"tracking {', '.join(stats)}")
+    print("Name a game, e.g.  Inter Miami vs Chicago Fire")
+    print("Then check a price, e.g.  over 2.5 @ 1.85   or   corners over 9.5 @ 2.10")
+    print("Commands: teams, help, quit")
+
+    projection = None
+    home = away = ""
+    while True:
+        try:
+            line = input("\n> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 0
+        if not line:
+            continue
+        lowered = line.lower()
+        if lowered in ("quit", "exit", "q"):
+            return 0
+        if lowered in ("teams", "list"):
+            print("  " + ", ".join(teams))
+            continue
+        if lowered in ("help", "?"):
+            print("  <home> vs <away>        odds card for that game")
+            print("  over 2.5 @ 1.85         is that price worth taking")
+            print("  corners over 9.5 @ 2.1  any stat in your results file")
+            print("  shots miami over 4.5 @ 1.3   one team's total")
+            print("  btts @ 1.75 / home @ 2.05 / ah -0.5 @ 1.95")
+            continue
+
+        fixture = parse_fixture(line, teams)
+        if fixture:
+            home, away = fixture
+            projection = show(home, away)
+            continue
+
+        if projection is None:
+            print("  name a game first, e.g. 'Inter Miami vs Chicago Fire'")
+            continue
+
+        phrase = parse_market_phrase(line, stats, home, away)
+        if phrase is None:
+            print("  did not understand that. Type 'help' for examples.")
+            continue
+        outcome = check_price(projection, phrase, cfg, args.bankroll)
+        print(outcome if isinstance(outcome, str) else outcome.render(args.bankroll))
+
+
 def cmd_trends(args: argparse.Namespace) -> int:
     from .data.sources import load_match_log
     from .trends import scan_trends, team_trends
@@ -510,6 +602,21 @@ def build_parser() -> argparse.ArgumentParser:
                     help="season strength only, ignoring the recent window")
     fm.add_argument("--json", action="store_true", help="dump every market")
     fm.set_defaults(func=cmd_form)
+
+    ak = sub.add_parser(
+        "ask", help="ask about one game and get its odds (interactive)"
+    )
+    ak.add_argument("log", help="CSV match log of past results")
+    ak.add_argument("--home", help="one-shot mode: home team")
+    ak.add_argument("--away", help="one-shot mode: away team")
+    ak.add_argument("--price", action="append",
+                    help="check a price, e.g. 'over 2.5 @ 1.85'; repeatable")
+    ak.add_argument("--bankroll", type=float, default=0.0)
+    ak.add_argument("--last", type=int, default=5)
+    ak.add_argument("--min-edge", type=float, default=0.03)
+    ak.add_argument("--max-stake", type=float, default=0.02)
+    ak.add_argument("--trust", type=float, default=1.0)
+    ak.set_defaults(func=cmd_ask)
 
     sc = sub.add_parser(
         "scan", help="analyse a whole day's fixtures at one book and rank them"

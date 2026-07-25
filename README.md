@@ -58,6 +58,55 @@ Also expect the honest answer often to be *nothing today*. On a normal card
 where the book has priced everything sensibly, there is no bet, and the tool
 says so rather than inventing one.
 
+### Asking about one game
+
+If you just want to look at a single match, `ask` is interactive:
+
+```bash
+claudebet ask matches.csv --bankroll 200
+```
+
+```
+> Inter Miami vs Chicago Fire
+
+                              CHANCE     FAIR TAKE ABOVE
+  MATCH RESULT
+    Inter Miami                50.8%     1.97       3.18
+    Draw                       26.9%     3.72      never
+  CORNERS  (we expect about 10.7)
+    over 9.5                   57.2%     1.75       2.48
+    over 10.5                  47.9%     2.09       3.20
+
+> corners over 9.5 @ 2.60/1.55
+    we make it        57.2%
+    price needs       38.5%
+    edge              +6.7%   EV +17.4% per unit staked
+    worth taking at   2.48 or better
+```
+
+Team names are matched loosely (`miami` finds Inter Miami) and markets are read
+from ordinary phrasing: `over 2.5`, `corners over 9.5`, `shots miami over 4.5`,
+`btts no`, `miami to win`, `ah -0.5`. Add `@ 1.85` to check a price, or
+`@ 2.60/1.55` to give both sides of the market so the book's margin can be
+removed exactly rather than estimated.
+
+**TAKE ABOVE is the number to use.** It is not the fair price — it sits well
+above it, because the estimate carries error and because seeing the book's
+price pulls our own estimate toward theirs. Check Doradobet: if their price
+beats that number, it is worth a bet; if it does not, it is not.
+
+`never` means no price would justify the bet — on that market the book knows
+more than this model does. Expect it on match results and goals, and expect
+real numbers on corners, cards and shots. That is not the tool giving up; it is
+telling you where you can and cannot compete.
+
+Same thing without the prompt:
+
+```bash
+claudebet ask matches.csv --home miami --away chicago \
+  --price "over 2.5 @ 1.85" --price "corners over 9.5 @ 2.10/1.75"
+```
+
 ### Finding trends, and testing whether they mean anything
 
 ```bash
@@ -158,6 +207,7 @@ you can see which side of that line you are on.
 | `odds` | Conversion between decimal, American, fractional, implied. Overround and hold. |
 | `devig` | Five ways to remove the margin: multiplicative, additive, power, Shin, odds-ratio. |
 | `market` | Consensus fair prices across books, line shopping, arbitrage, steam detection. |
+| `ask` | Interactive: name a game, get its odds card; check a price in plain English. |
 | `scan` | Rank a whole day's fixtures at one book by value, not by hit rate. |
 | `trends` | Recent streaks, each tested against the chance of it being luck. |
 | `form` | Last-N form from a match log into probabilities for every market. |
@@ -286,5 +336,5 @@ money. Bet only what you can afford to lose.
 ## Tests
 
 ```bash
-python -m pytest tests -q     # 311 tests
+python -m pytest tests -q     # 353 tests
 ```
